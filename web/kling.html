@@ -1,0 +1,85 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Kling Effects Test</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    body { background:#000; color:#fff; font-family:sans-serif; padding:20px; }
+    h1 { font-size:20px; margin-bottom:10px; }
+    .grid { display:grid; grid-template-columns:repeat(2,1fr); gap:10px; margin-bottom:15px;}
+    .card {
+      padding:12px; background:#111; border-radius:10px;
+      cursor:pointer; border:1px solid transparent;
+    }
+    .card.selected { border-color:#ff7a00; }
+    #runBtn {
+      width:100%; padding:12px; background:#ff7a00; color:#000;
+      border:none; border-radius:30px; font-weight:bold;
+    }
+    #result { white-space:pre-wrap; margin-top:20px; font-size:12px; }
+  </style>
+</head>
+<body>
+
+<h1>Тест Kling Effects</h1>
+
+<div class="grid" id="templates"></div>
+
+<label>Загрузить фото:</label><br>
+<input type="file" id="photo" accept="image/*">
+
+<br><br>
+
+<button id="runBtn">Запустить эффект</button>
+
+<pre id="result"></pre>
+
+<script>
+const TEMPLATES = [
+  { id: 'snowglobe', title: 'Snowglobe' },
+  { id: 'firework_2026', title: 'Firework 2026' },
+  { id: 'glamour_photo_shoot', title: 'Glamour Photo Shoot' },
+  { id: 'box_of_joy', title: 'Box Of Joy' }
+];
+
+let selected = null;
+const grid = document.getElementById("templates");
+
+TEMPLATES.forEach(tpl => {
+  const d = document.createElement("div");
+  d.className = "card";
+  d.textContent = tpl.title;
+  d.onclick = () => {
+    selected = tpl.id;
+    document.querySelectorAll(".card").forEach(c => c.classList.remove("selected"));
+    d.classList.add("selected");
+  };
+  grid.appendChild(d);
+});
+
+document.getElementById("runBtn").onclick = async () => {
+  const result = document.getElementById("result");
+  const photo = document.getElementById("photo").files[0];
+
+  if (!selected) return alert("Выбери эффект!");
+  if (!photo) return alert("Загрузи фото!");
+
+  result.textContent = "Отправляю запрос на backend…";
+
+  const form = new FormData();
+  form.append("effect_id", selected);
+  form.append("photo", photo);
+
+  const resp = await fetch("http://localhost:8000/api/kling_effect", {
+    method: "POST",
+    body: form
+  });
+
+  const data = await resp.json();
+  result.textContent = JSON.stringify(data, null, 2);
+};
+</script>
+
+</body>
+</html>
