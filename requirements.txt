@@ -1,4 +1,11 @@
+fastapi
+uvicorn[standard]
+gunicorn
+
 pyTelegramBotAPI
+requests
+python-dotenv
+PyJWTpyTelegramBotAPI
 python-dotenv
 requests
 openai
