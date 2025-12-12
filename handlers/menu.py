@@ -1,3 +1,5 @@
+# handlers/menu.py
+
 from telebot import types
 from services.billing import format_balance_message
 
@@ -19,7 +21,7 @@ def register_menu_handlers(bot):
         bot.send_message(
             message.chat.id,
             "✨ Выбери, что хочешь сделать:",
-            reply_markup=build_main_menu(),
+            reply_markup=build_main_menu()
         )
 
     @bot.message_handler(func=lambda m: m.text == "👤 Мой тариф и баланс")
@@ -27,34 +29,14 @@ def register_menu_handlers(bot):
         user_id = message.from_user.id
         balance_text = format_balance_message(user_id)
 
-        # ВАЖНО: импорт из handlers.payments (а не payments.py в корне)
-        try:
-            from handlers.payments import build_tariffs_keyboard, tariffs_text
-            kb = build_tariffs_keyboard()
-            t_text = tariffs_text()
-        except Exception as e:
-            kb = None
-            t_text = f"⚠️ Тарифы временно недоступны.\nТех. причина: {e}"
+        # ✅ НИКАКИХ заглушек. Импортируем оплату как есть.
+        from handlers.payments import build_tariffs_keyboard, tariffs_text
 
         bot.send_message(
             message.chat.id,
             "👤 *Твой тариф и баланс:*\n\n"
             f"{balance_text}\n\n"
-            f"{t_text}",
+            f"{tariffs_text()}",
             parse_mode="Markdown",
-            reply_markup=kb,
-        )
-
-    @bot.message_handler(func=lambda m: m.text == "🎄 Видеошаблоны")
-    def open_webapp(message):
-        # URL твоего Render сервиса:
-        WEBAPP_URL = "https://magicbot-g98j.onrender.com"
-
-        kb = types.InlineKeyboardMarkup()
-        kb.add(types.InlineKeyboardButton("✨ Открыть видеошаблоны", web_app=types.WebAppInfo(url=WEBAPP_URL)))
-
-        bot.send_message(
-            message.chat.id,
-            "✨ Открываю видеошаблоны внутри Telegram 👇",
-            reply_markup=kb,
+            reply_markup=build_tariffs_keyboard(),
         )
