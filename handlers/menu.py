@@ -2,7 +2,6 @@
 
 from telebot import types
 from services.billing import format_balance_message
-from handlers.payments import build_tariffs_keyboard, tariffs_text
 
 # URL твоего миниапа (Render)
 MAGICBOT_WEBAPP_URL = "https://magicbot-g98j.onrender.com"
@@ -41,15 +40,34 @@ def register_menu_handlers(bot):
 
     @bot.message_handler(func=lambda m: m.text == "👤 Мой тариф и баланс")
     def my_tariff_handler(message: types.Message):
+        """
+        Показываем баланс + тарифы.
+        Импортируем payments лениво, чтобы ошибка в оплатах
+        не ломала всё меню.
+        """
         user_id = message.from_user.id
         balance_text = format_balance_message(user_id)
-        kb = build_tariffs_keyboard()
+
+        kb = None
+        tariffs_block = ""
+
+        try:
+            from handlers.payments import build_tariffs_keyboard, tariffs_text
+
+            kb = build_tariffs_keyboard()
+            tariffs_block = tariffs_text()
+        except Exception:
+            # если с оплатами что-то не так — просто не показываем кнопки покупки
+            tariffs_block = (
+                "⚠️ Тарифы временно недоступны.\n"
+                "Я сообщу тебе, когда магию оплат починим ✨"
+            )
 
         bot.send_message(
             message.chat.id,
             "👤 *Твой тариф и баланс:*\n\n"
             f"{balance_text}\n\n"
-            f"{tariffs_text()}",
+            f"{tariffs_block}",
             parse_mode="Markdown",
             reply_markup=kb,
         )
