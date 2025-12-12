@@ -1,44 +1,25 @@
 # handlers/payments.py
 #
-# Тарифы + оплата через Telegram Payments.
-# /buy или /pay — показать тарифы.
-# Кнопка "👤 Мой тариф и баланс" из меню показывает баланс + эти же кнопки.
-# Успешная оплата — начисление токенов + сохранение тарифа + тарифные цены.
+# Оплата через Telegram Payments (ЮKassa).
+# Показывает 3 тарифа, по нажатию сразу открывает инвойс (без промокодов).
+# Начисляет токены и применяет тарифные цены.
+#
+# Важно:
+# - Использует PAYMENTS_PROVIDER_TOKEN из config.py
+# - Вся логика в одном register_payment_handlers(bot)
 
-from telebot import TeleBot, types
+from telebot import types
 from telebot.types import LabeledPrice
 
 from config import PAYMENTS_PROVIDER_TOKEN, PAYMENTS_CURRENCY
-from services.billing import (
-    add_tokens,
-    format_balance_message,
-    set_last_tariff,
-    apply_tariff_pricing,
-)
-
-# ============================
-# 🔹 Тарифы
-# ============================
+from services.billing import add_tokens, set_last_tariff, apply_tariff_pricing, format_balance_message
 
 TARIFFS = {
-    "start": {
-        "title": "START",
-        "description": "Базовый доступ к магии ChudoMaster ✨",
-        "price_rub": 249,
-    },
-    "pro": {
-        "title": "PRO",
-        "description": "Больше магии и экспериментов ✨",
-        "price_rub": 499,
-    },
-    "max": {
-        "title": "MAX",
-        "description": "Максимальный запас чудес ✨",
-        "price_rub": 949,
-    },
+    "start": {"title": "START", "description": "Базовый доступ к магии ✨", "price_rub": 249},
+    "pro":   {"title": "PRO",   "description": "Больше магии и экспериментов ✨", "price_rub": 499},
+    "max":   {"title": "MAX",   "description": "Максимальный запас чудес ✨", "price_rub": 949},
 }
 
-# Сколько токенов даёт каждый тариф
 TARIFF_TOKENS = {
     "start": 124,
     "pro": 249,
@@ -47,103 +28,54 @@ TARIFF_TOKENS = {
 
 
 def build_tariffs_keyboard() -> types.InlineKeyboardMarkup:
-    """
-    Клавиатура с кнопками выбора тарифа.
-    """
     kb = types.InlineKeyboardMarkup()
-    kb.add(
-        types.InlineKeyboardButton(
-            text=f"START — {TARIFFS['start']['price_rub']} ₽",
-            callback_data="buy_start",
-        )
-    )
-    kb.add(
-        types.InlineKeyboardButton(
-            text=f"PRO — {TARIFFS['pro']['price_rub']} ₽",
-            callback_data="buy_pro",
-        )
-    )
-    kb.add(
-        types.InlineKeyboardButton(
-            text=f"MAX — {TARIFFS['max']['price_rub']} ₽",
-            callback_data="buy_max",
-        )
-    )
+    kb.add(types.InlineKeyboardButton(text=f"START — {TARIFFS['start']['price_rub']} ₽", callback_data="buy:start"))
+    kb.add(types.InlineKeyboardButton(text=f"PRO — {TARIFFS['pro']['price_rub']} ₽", callback_data="buy:pro"))
+    kb.add(types.InlineKeyboardButton(text=f"MAX — {TARIFFS['max']['price_rub']} ₽", callback_data="buy:max"))
     return kb
 
 
 def tariffs_text() -> str:
-    """
-    Красивое описание тарифов с упором на токены.
-    """
-    lines: list[str] = []
-    lines.append("📦 *Тарифы:*")
-    lines.append("")
-
-    for key in ("start", "pro", "max"):
-        t = TARIFFS[key]
-        tokens = TARIFF_TOKENS.get(key, 0)
-        lines.append(
-            f"*{t['title']}* — {t['price_rub']} ₽\n"
-            f"• {tokens} токенов для магии ✨\n"
-        )
-
-    return "\n".join(lines)
+    return (
+        "📦 *Тарифы:*\n\n"
+        f"*START* — 249 ₽ → *{TARIFF_TOKENS['start']}* токенов\n"
+        f"*PRO* — 499 ₽ → *{TARIFF_TOKENS['pro']}* токенов\n"
+        f"*MAX* — 949 ₽ → *{TARIFF_TOKENS['max']}* токенов\n"
+    )
 
 
-def register_payment_handlers(bot: TeleBot):
-    """
-    Регистрация всех хендлеров, связанных с оплатой:
-    - /buy, /pay — показать тарифы
-    - callback buy_start / buy_pro / buy_max
-    - pre_checkout_query
-    - successful_payment
-    """
+def register_payment_handlers(bot):
 
-    # /buy или /pay — показать тарифы + кнопки
+    # /buy /pay — показать тарифы
     @bot.message_handler(commands=["buy", "pay"])
-    def buy_handler(message: types.Message):
-        kb = build_tariffs_keyboard()
+    def cmd_buy(message):
         bot.send_message(
             message.chat.id,
             tariffs_text(),
             parse_mode="Markdown",
-            reply_markup=kb,
+            reply_markup=build_tariffs_keyboard(),
         )
 
-    # обработка нажатий на кнопки тарифов
-    @bot.callback_query_handler(func=lambda c: c.data and c.data.startswith("buy_"))
-    def process_buy_callback(callback: types.CallbackQuery):
-        tariff_key = callback.data.split("_", 1)[1]  # "start" / "pro" / "max"
+    # Нажатие на тариф — сразу открываем оплату
+    @bot.callback_query_handler(func=lambda c: c.data and c.data.startswith("buy:"))
+    def buy_callback(call):
+        tariff_key = call.data.split(":", 1)[1]
         tariff = TARIFFS.get(tariff_key)
 
         if not tariff:
-            bot.answer_callback_query(
-                callback.id,
-                "Неизвестный тариф 🤔",
-                show_alert=True,
-            )
+            bot.answer_callback_query(call.id, "Неизвестный тариф", show_alert=True)
             return
 
         if not PAYMENTS_PROVIDER_TOKEN:
-            bot.answer_callback_query(
-                callback.id,
-                "Оплата временно недоступна. Попробуй чуть позже 🙏",
-                show_alert=True,
-            )
+            bot.answer_callback_query(call.id, "Оплата сейчас недоступна (нет токена провайдера)", show_alert=True)
             return
 
-        prices = [
-            LabeledPrice(
-                label=tariff["title"],
-                amount=tariff["price_rub"] * 100,  # копейки
-            )
-        ]
+        bot.answer_callback_query(call.id)
 
-        bot.answer_callback_query(callback.id)
+        prices = [LabeledPrice(label=tariff["title"], amount=int(tariff["price_rub"]) * 100)]
 
         bot.send_invoice(
-            chat_id=callback.message.chat.id,
+            chat_id=call.message.chat.id,
             title=f"Тариф {tariff['title']}",
             description=tariff["description"],
             provider_token=PAYMENTS_PROVIDER_TOKEN,
@@ -153,42 +85,32 @@ def register_payment_handlers(bot: TeleBot):
             invoice_payload=tariff_key,  # вернётся в successful_payment
         )
 
-    # pre_checkout_query — обязательно отвечаем ok=True,
-    # иначе Telegram не завершит оплату.
+    # Telegram требует pre_checkout ok=True
     @bot.pre_checkout_query_handler(func=lambda q: True)
-    def checkout_process(pre_checkout_query: types.PreCheckoutQuery):
+    def pre_checkout(pre_checkout_query):
         bot.answer_pre_checkout_query(pre_checkout_query.id, ok=True)
 
-    # успешная оплата
+    # Успешная оплата
     @bot.message_handler(content_types=["successful_payment"])
-    def successful_payment_handler(message: types.Message):
+    def success_payment(message):
         sp = message.successful_payment
         user_id = message.from_user.id
         chat_id = message.chat.id
 
-        tariff_key = sp.invoice_payload  # "start" / "pro" / "max"
-        tariff = TARIFFS.get(tariff_key, {})
-        title = tariff.get("title", tariff_key.upper())
+        tariff_key = sp.invoice_payload
+        tokens_to_add = int(TARIFF_TOKENS.get(tariff_key, 0))
 
-        total_rub = sp.total_amount / 100.0
-        currency = sp.currency
-
-        # Сколько токенов начисляем
-        tokens_to_add = TARIFF_TOKENS.get(tariff_key, 0)
-        tokens_added = add_tokens(user_id, tokens_to_add)
-
-        # Запоминаем тариф и его тарифные цены
+        add_tokens(user_id, tokens_to_add)
         set_last_tariff(user_id, tariff_key)
         apply_tariff_pricing(user_id, tariff_key)
 
-        balance_text = format_balance_message(user_id)
+        balance = format_balance_message(user_id)
 
         bot.send_message(
             chat_id,
             "✅ *Оплата прошла успешно!*\n\n"
-            f"Тариф: *{title}*\n"
-            f"Сумма: *{total_rub:.2f} {currency}*\n"
-            f"Начислено токенов: *{tokens_added}*\n\n"
-            f"{balance_text}",
+            f"Начислено токенов: *{tokens_to_add}*\n\n"
+            f"{balance}\n\n"
+            "Если хочешь — сразу жми кнопку из меню и делай магию ✨",
             parse_mode="Markdown",
         )

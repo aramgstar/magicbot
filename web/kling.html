@@ -1,85 +1,104 @@
 <!doctype html>
-<html>
+<html lang="ru">
 <head>
   <meta charset="utf-8" />
-  <title>Kling Effects Test</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Видеошаблоны</title>
+
+  <!-- Telegram MiniApp SDK -->
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+
   <style>
-    body { background:#000; color:#fff; font-family:sans-serif; padding:20px; }
-    h1 { font-size:20px; margin-bottom:10px; }
-    .grid { display:grid; grid-template-columns:repeat(2,1fr); gap:10px; margin-bottom:15px;}
-    .card {
-      padding:12px; background:#111; border-radius:10px;
-      cursor:pointer; border:1px solid transparent;
-    }
-    .card.selected { border-color:#ff7a00; }
-    #runBtn {
-      width:100%; padding:12px; background:#ff7a00; color:#000;
-      border:none; border-radius:30px; font-weight:bold;
-    }
-    #result { white-space:pre-wrap; margin-top:20px; font-size:12px; }
+    body { font-family: system-ui, -apple-system, Arial, sans-serif; padding: 16px; }
+    h2 { margin: 0 0 12px; }
+    .card { border: 1px solid #e6e6e6; border-radius: 14px; padding: 14px; }
+    label { display: block; margin: 10px 0 6px; font-weight: 600; }
+    select, input { width: 100%; padding: 10px; border-radius: 10px; border: 1px solid #ddd; }
+    button { width: 100%; margin-top: 12px; padding: 12px 14px; border: 0; border-radius: 12px; font-weight: 700; cursor: pointer; }
+    .muted { color: #777; font-size: 13px; margin-top: 6px; }
+    .ok { color: #0a7; margin-top: 12px; }
+    .err { color: #c22; margin-top: 12px; }
   </style>
 </head>
 <body>
+  <h2>🎄 Новогодние видеошаблоны</h2>
 
-<h1>Тест Kling Effects</h1>
+  <div class="card">
+    <label>Шаблон</label>
+    <select id="effect">
+      <option value="ny_snow">❄️ Снег и магия</option>
+      <option value="ny_glow">✨ Неоновый праздник</option>
+      <option value="ny_fireworks">🎆 Фейерверк</option>
+    </select>
+    <div class="muted">Выбери эффект и загрузи фото — видео придёт в чат с ботом.</div>
 
-<div class="grid" id="templates"></div>
+    <label>Пожелание (необязательно)</label>
+    <input id="prompt" placeholder="Например: сделай атмосферно и волшебно" />
 
-<label>Загрузить фото:</label><br>
-<input type="file" id="photo" accept="image/*">
+    <label>Фото</label>
+    <input id="photo" type="file" accept="image/*" />
 
-<br><br>
+    <button id="send">🚀 Отправить на обработку</button>
 
-<button id="runBtn">Запустить эффект</button>
+    <div id="status"></div>
+  </div>
 
-<pre id="result"></pre>
+  <script>
+    const tg = window.Telegram.WebApp;
+    tg.ready();
 
-<script>
-const TEMPLATES = [
-  { id: 'snowglobe', title: 'Snowglobe' },
-  { id: 'firework_2026', title: 'Firework 2026' },
-  { id: 'glamour_photo_shoot', title: 'Glamour Photo Shoot' },
-  { id: 'box_of_joy', title: 'Box Of Joy' }
-];
+    const btn = document.getElementById("send");
+    const statusEl = document.getElementById("status");
 
-let selected = null;
-const grid = document.getElementById("templates");
+    function setStatus(text, cls) {
+      statusEl.className = cls || "";
+      statusEl.textContent = text;
+    }
 
-TEMPLATES.forEach(tpl => {
-  const d = document.createElement("div");
-  d.className = "card";
-  d.textContent = tpl.title;
-  d.onclick = () => {
-    selected = tpl.id;
-    document.querySelectorAll(".card").forEach(c => c.classList.remove("selected"));
-    d.classList.add("selected");
-  };
-  grid.appendChild(d);
-});
+    btn.addEventListener("click", async () => {
+      const effect = document.getElementById("effect").value;
+      const prompt = document.getElementById("prompt").value || "";
+      const file = document.getElementById("photo").files[0];
 
-document.getElementById("runBtn").onclick = async () => {
-  const result = document.getElementById("result");
-  const photo = document.getElementById("photo").files[0];
+      if (!file) {
+        setStatus("Сначала выбери фото 🙂", "err");
+        return;
+      }
 
-  if (!selected) return alert("Выбери эффект!");
-  if (!photo) return alert("Загрузи фото!");
+      btn.disabled = true;
+      setStatus("⏳ Отправляю запрос на backend…", "");
 
-  result.textContent = "Отправляю запрос на backend…";
+      const fd = new FormData();
+      fd.append("initData", tg.initData);     // обязательно!
+      fd.append("effect_id", effect);
+      fd.append("prompt", prompt);
+      fd.append("photo", file);
 
-  const form = new FormData();
-  form.append("effect_id", selected);
-  form.append("photo", photo);
+      try {
+        const res = await fetch("/api/kling_effect", { method: "POST", body: fd });
+        const data = await res.json().catch(() => ({}));
 
-  const resp = await fetch("http://localhost:8000/api/kling_effect", {
-    method: "POST",
-    body: form
-  });
+        if (!res.ok || !data.ok) {
+          setStatus("Ошибка отправки 😔 " + (data.error ? ("(" + data.error + ")") : ""), "err");
+          btn.disabled = false;
+          return;
+        }
 
-  const data = await resp.json();
-  result.textContent = JSON.stringify(data, null, 2);
-};
-</script>
+        // ✅ успех: закрываем окно автоматически
+        setStatus("✅ Эффект отправлен! Сейчас закрою окно…", "ok");
 
+        // Можно ещё показать Telegram нативный alert (по желанию)
+        // tg.showAlert("Эффект отправлен! Результат придёт в чат ✨");
+
+        setTimeout(() => {
+          tg.close();
+        }, 450);
+
+      } catch (e) {
+        setStatus("Ошибка сети 😔 " + e, "err");
+        btn.disabled = false;
+      }
+    });
+  </script>
 </body>
 </html>
