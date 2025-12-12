@@ -2,13 +2,13 @@
 
 from telebot import types
 from services.billing import format_balance_message
-from payments import build_tariffs_keyboard, tariffs_text
+from handlers.payments import build_tariffs_keyboard, tariffs_text
 
-# URL твоего миниапа
+# URL твоего миниапа (Render)
 MAGICBOT_WEBAPP_URL = "https://magicbot-g98j.onrender.com"
 
 
-def build_main_menu():
+def build_main_menu() -> types.ReplyKeyboardMarkup:
     kb = types.ReplyKeyboardMarkup(resize_keyboard=True)
 
     # Порядок кнопок:
@@ -23,8 +23,11 @@ def build_main_menu():
 
 def register_menu_handlers(bot):
 
-    @bot.message_handler(commands=["start"])
-    def start_handler(message):
+    @bot.message_handler(commands=["start", "menu"])
+    def start_or_menu_handler(message: types.Message):
+        """
+        /start и /menu — пересобираем главное меню и отправляем пользователю.
+        """
         text = (
             "✨ Я помогу создать волшебные картинки, улучшить фото, "
             "оживить изображения в видео и собрать ролики из шаблонов.\n\n"
@@ -37,7 +40,7 @@ def register_menu_handlers(bot):
         )
 
     @bot.message_handler(func=lambda m: m.text == "👤 Мой тариф и баланс")
-    def my_tariff_handler(message):
+    def my_tariff_handler(message: types.Message):
         user_id = message.from_user.id
         balance_text = format_balance_message(user_id)
         kb = build_tariffs_keyboard()
@@ -52,7 +55,7 @@ def register_menu_handlers(bot):
         )
 
     @bot.message_handler(func=lambda m: m.text == "🎄 Видеошаблоны")
-    def open_magic_templates(message):
+    def open_magic_templates(message: types.Message):
         """
         Открываем миниап с шаблонами через WebApp.
         """
