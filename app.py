@@ -1,65 +1,62 @@
-# app.py
-#
-# FastAPI сервер для Render:
-# - Webhook Telegram: POST /telegram/webhook
-# - MiniApp: GET /
-# - Backend MiniApp: подключается из web/backend.py (router)
-#
-# ВАЖНО: тут НЕТ polling. Только webhook.
-
 import os
 from fastapi import FastAPI, Request
 from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
+from telebot import types as tg_types
+
 from loader import bot
 from bot import register_all_handlers
-from config import TELEGRAM_WEBHOOK_BASE
+from config import TELEGRAM_WEBHOOK_BASE, TELEGRAM_WEBHOOK_PATH
 
-# 1) регистрируем хендлеры один раз
-register_all_handlers()
+# Миниап backend (твой router)
+from web.backend import router as kling_router
 
 app = FastAPI()
 
-# 2) статика (если надо отдавать js/css/картинки)
+# статика миниапа
 app.mount("/static", StaticFiles(directory="web"), name="static")
 
-# 3) подключаем backend MiniApp из web/backend.py
-# В web/backend.py должен быть router = APIRouter() и @router.post("/api/kling_effect")
-from web.backend import router as backend_router
-app.include_router(backend_router)
+# подключаем API роуты миниапа
+app.include_router(kling_router)
+
+# регистрируем хендлеры бота
+register_all_handlers()
 
 
-# 4) MiniApp на главной
-@app.get("/", response_class=HTMLResponse)
-def index():
-    return FileResponse("web/kling.html")
-
-
-# 5) Telegram webhook endpoint
-@app.post("/telegram/webhook")
-async def telegram_webhook(req: Request):
-    update_json = await req.json()
-    from telebot.types import Update
-    update = Update.de_json(update_json)
-    bot.process_new_updates([update])
-    return {"ok": True}
-
-
-# 6) Авто-установка webhook при старте
 @app.on_event("startup")
-async def on_startup():
-    base = (TELEGRAM_WEBHOOK_BASE or "").rstrip("/")
-    if not base:
-        print("⚠️ TELEGRAM_WEBHOOK_BASE не задан — webhook не установлен.")
+def on_startup():
+    """
+    Включаем webhook.
+    ВАЖНО: на Render НЕ запускаем polling, иначе будет 409 Conflict.
+    """
+    if not TELEGRAM_WEBHOOK_BASE:
+        # Если не задано — бот НЕ сможет получать апдейты
+        print("⚠️ TELEGRAM_WEBHOOK_BASE is empty. Set it in Render Env.")
         return
 
-    webhook_url = f"{base}/telegram/webhook"
-
+    webhook_url = f"{TELEGRAM_WEBHOOK_BASE}{TELEGRAM_WEBHOOK_PATH}"
     try:
         bot.remove_webhook()
     except Exception:
         pass
 
     ok = bot.set_webhook(url=webhook_url)
-    print(f"✅ Webhook set: {webhook_url} | result={ok}")
+    print(f"✅ Webhook set: {webhook_url} (ok={ok})")
+
+
+@app.get("/", response_class=HTMLResponse)
+def index():
+    # твой миниап
+    return FileResponse("web/kling.html")
+
+
+@app.post(TELEGRAM_WEBHOOK_PATH)
+async def telegram_webhook(request: Request):
+    """
+    Telegram будет слать сюда апдейты.
+    """
+    data = await request.json()
+    update = tg_types.Update.de_json(data)
+    bot.process_new_updates([update])
+    return {"ok": True}
